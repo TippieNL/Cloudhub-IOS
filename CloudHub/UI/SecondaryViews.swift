@@ -112,7 +112,7 @@ struct FavoritesView: View {
         Group {
             if model.favoritesLoad == .failed && entries.isEmpty {
                 MessageView(systemImage: "star.slash", title: "Could not load your favorites",
-                            detail: model.favoritesError ?? "The server did not answer.", actionLabel: "Retry", action: model.loadFavorites)
+                            detail: model.favoritesError ?? "The server did not answer.", actionLabel: "Retry", action: { model.loadFavorites() })
             } else if model.favoritesLoad == .loading && entries.isEmpty {
                 ProgressView()
             } else if entries.isEmpty {

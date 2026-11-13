@@ -72,7 +72,10 @@ struct FilesView: View {
                 Task { await stagePicked(items) }
             }
             .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result { app.enqueue(urls.map { ($0, $0.lastPathComponent) }) }
+                if case .success(let urls) = result {
+                    let picked: [(url: URL, name: String)] = urls.map { (url: $0, name: $0.lastPathComponent) }
+                    app.enqueue(picked)
+                }
             }
             .fullScreenCover(item: $capture) { mode in
                 CameraPicker(mode: mode) { captured in
@@ -97,13 +100,17 @@ struct FilesView: View {
         case .error:
             MessageView(systemImage: "icloud.slash", title: "Could not load this folder",
                         detail: model.loadError ?? "The server did not answer.",
-                        actionLabel: "Retry", action: model.retry)
+                        actionLabel: "Retry", action: { model.retry() })
         case .empty:
-            MessageView(systemImage: "folder", title: "This folder is empty",
-                        detail: model.canWrite ? "Add files with the + button, or create a folder to organise them."
-                                               : "Nothing has been put here yet.",
-                        actionLabel: model.canWrite ? "Create a folder" : nil,
-                        action: model.canWrite ? { showingNewFolder = true } : nil)
+            if model.canWrite {
+                MessageView(systemImage: "folder", title: "This folder is empty",
+                            detail: "Add files with the + button, or create a folder to organise them.",
+                            actionLabel: "Create a folder",
+                            action: { showingNewFolder = true })
+            } else {
+                MessageView(systemImage: "folder", title: "This folder is empty",
+                            detail: "Nothing has been put here yet.")
+            }
         case .noMatches:
             noMatches
         case .content:
@@ -116,17 +123,21 @@ struct FilesView: View {
     }
 
     @ViewBuilder private var noMatches: some View {
+        let query = model.query.trimmingCharacters(in: .whitespaces)
         if model.searching {
             MessageView(systemImage: "magnifyingglass", title: "Searching…",
-                        detail: "Looking in every folder for \u{201C}\(model.query.trimmingCharacters(in: .whitespaces))\u{201D}.")
+                        detail: "Looking in every folder for \u{201C}\(query)\u{201D}.")
         } else if model.searchMode {
             MessageView(systemImage: "magnifyingglass", title: "Nothing matched",
                         detail: "Check the spelling, or try part of the name.")
+        } else if SearchRules.canSearch(query) {
+            MessageView(systemImage: "magnifyingglass", title: "Nothing matched",
+                        detail: "No file here is called \u{201C}\(query)\u{201D}. Try All folders to search everywhere.",
+                        actionLabel: "Search all folders",
+                        action: { model.searchEverywhere() })
         } else {
             MessageView(systemImage: "magnifyingglass", title: "Nothing matched",
-                        detail: "No file here is called \u{201C}\(model.query)\u{201D}. Try All folders to search everywhere.",
-                        actionLabel: SearchRules.canSearch(model.query) ? "Search all folders" : nil,
-                        action: SearchRules.canSearch(model.query) ? model.searchEverywhere : nil)
+                        detail: "No file here is called \u{201C}\(query)\u{201D}.")
         }
     }
 
