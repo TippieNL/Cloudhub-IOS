@@ -34,8 +34,8 @@ struct TwoFactorView: View {
         .navigationTitle("Two-step verification")
         .navigationBarBackButtonHidden(isCodes)
         .toolbar {
-            if isCodes {
-                ToolbarItem(placement: .confirmationAction) {
+            ToolbarItem(placement: .confirmationAction) {
+                if isCodes {
                     Button("Done") { if codesSaved { model.codesSaved() } else { confirmLeave = true } }
                 }
             }

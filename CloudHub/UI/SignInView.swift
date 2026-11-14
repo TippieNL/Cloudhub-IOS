@@ -48,8 +48,8 @@ struct SetupView: View {
             }
             .navigationTitle("Connect to your server")
             .toolbar {
-                if !(app.prefs.serverURL ?? "").isEmpty {
-                    ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .cancellationAction) {
+                    if !(app.prefs.serverURL ?? "").isEmpty {
                         Button("Cancel") { app.phase = .signIn }
                     }
                 }

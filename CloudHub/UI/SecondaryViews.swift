@@ -59,8 +59,10 @@ struct TrashView: View {
         }
         .navigationTitle("Trash")
         .toolbar {
-            if app.files.canWrite, !(listing?.entries.isEmpty ?? true) {
-                Button("Empty", role: .destructive) { confirmingEmpty = true }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if app.files.canWrite, !(listing?.entries.isEmpty ?? true) {
+                    Button("Empty", role: .destructive) { confirmingEmpty = true }
+                }
             }
         }
         .confirmationDialog("Empty the trash?", isPresented: $confirmingEmpty, titleVisibility: .visible) {
@@ -157,7 +159,11 @@ struct FavoritesView: View {
             }
         }
         .navigationTitle("Favorites")
-        .toolbar { Button { model.loadFavorites() } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh") }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { model.loadFavorites() } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
+            }
+        }
     }
 }
 
@@ -216,12 +222,14 @@ struct StorageView: View {
         .navigationTitle("Storage")
         .toolbar {
             // Walking the whole store stays an admin action.
+            ToolbarItem(placement: .navigationBarTrailing) {
             if mine?.isAdmin == true {
                 Button { Task { await load(refresh: true) } } label: {
                     if busy { ProgressView() } else { Image(systemName: "arrow.clockwise") }
                 }
                 .accessibilityLabel("Recalculate")
                 .disabled(busy)
+            }
             }
         }
         .task { await load(refresh: false) }
