@@ -83,7 +83,7 @@ private struct ArrowShape: Shape {
 /* ---- toasts ---------------------------------------------------------------- */
 
 private struct ToastOverlay: ViewModifier {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
@@ -147,15 +147,20 @@ struct MessageView: View {
     var action: (() -> Void)?
 
     var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: systemImage)
-        } description: {
-            if let detail { Text(detail) }
-        } actions: {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(.secondary)
+            Text(title).font(.title3.bold()).multilineTextAlignment(.center)
+            if let detail {
+                Text(detail).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
             if let actionLabel, let action {
-                Button(actionLabel, action: action).buttonStyle(.borderedProminent)
+                Button(actionLabel, action: action).buttonStyle(.borderedProminent).padding(.top, 4)
             }
         }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

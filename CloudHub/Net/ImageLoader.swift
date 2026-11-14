@@ -134,7 +134,13 @@ final class ImageLoader: @unchecked Sendable {
         generator.maximumSize = CGSize(width: maxPixels, height: maxPixels)
         generator.requestedTimeToleranceBefore = .positiveInfinity
         generator.requestedTimeToleranceAfter = CMTime(seconds: 2, preferredTimescale: 600)
-        let (cg, _) = try await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600))
+        // The async image(at:) is iOS 16; this is the same call as a callback.
+        let cg: CGImage = try await withCheckedThrowingContinuation { done in
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: CMTime(seconds: 1, preferredTimescale: 600))]) { _, image, _, result, error in
+                if let image, result == .succeeded { done.resume(returning: image) }
+                else { done.resume(throwing: error ?? CancellationError()) }
+            }
+        }
         let image = UIImage(cgImage: cg)
         memory.setObject(image, forKey: key)
         contribute(image, for: entry)

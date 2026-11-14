@@ -1,62 +1,27 @@
 import AVFoundation
 import AVKit
 import CloudHubCore
+import Combine
 import SwiftUI
 
 /// Video and audio playback, in AVKit's own player -- speed, AirPlay,
 /// picture in picture and fullscreen come with it -- plus the subtitle files
 /// found beside the film, and an offer to carry on where you stopped.
 struct PlayerView: View {
-    @Environment(AppEnvironment.self) private var app
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var app: AppEnvironment
     let entry: FileEntry
-
     @State private var session: PlaybackSession?
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if let session {
-                    PlayerController(session: session, cue: session.cue).ignoresSafeArea(edges: .bottom)
-                } else {
-                    ProgressView().tint(.white)
-                }
-            }
-            .navigationTitle(entry.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Color.black.opacity(0.6), for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: { Image(systemName: "chevron.backward") }
-                        .accessibilityLabel("Back")
-                }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    if let session, !session.tracks.isEmpty {
-                        Menu {
-                            Picker("Subtitles", selection: Binding(get: { session.chosen?.id ?? "" },
-                                                                   set: { id in session.choose(session.tracks.first { $0.id == id }) })) {
-                                Text("Off").tag("")
-                                ForEach(session.tracks) { track in
-                                    Text(track.label.isEmpty ? (track.language.isEmpty ? track.name : track.language) : track.label)
-                                        .tag(track.id)
-                                }
-                            }
-                        } label: {
-                            Image(systemName: session.chosen == nil ? "captions.bubble" : "captions.bubble.fill")
-                        }
-                        .accessibilityLabel("Subtitles")
-                    }
-                    Button { app.files.toggleFavorite(entry) } label: {
-                        let starred = app.files.favorites.contains(entry.path)
-                        Image(systemName: starred ? "star.fill" : "star").foregroundStyle(starred ? Brand.favorite : .white)
-                    }
-                    .accessibilityLabel(app.files.favorites.contains(entry.path) ? "Remove from favorites" : "Add to favorites")
-                }
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let session {
+                PlayerScreen(entry: entry, session: session)
+            } else {
+                ProgressView().tint(.white)
             }
         }
+        .preferredColorScheme(.dark)
         .toastOverlay()
         .onAppear {
             ForegroundMedia.enter()
@@ -72,23 +37,70 @@ struct PlayerView: View {
     }
 }
 
+/// The screen around the player, watching the session for subtitles.
+private struct PlayerScreen: View {
+    @EnvironmentObject private var app: AppEnvironment
+    @Environment(\.dismiss) private var dismiss
+    let entry: FileEntry
+    @ObservedObject var session: PlaybackSession
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                PlayerController(session: session, cue: session.cue).ignoresSafeArea(edges: .bottom)
+            }
+            .navigationTitle(entry.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "chevron.backward") }
+                        .accessibilityLabel("Back")
+                }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if !session.tracks.isEmpty {
+                        Menu {
+                            Picker("Subtitles", selection: Binding(get: { session.chosen?.id ?? "" },
+                                                                   set: { id in session.choose(session.tracks.first { $0.id == id }) })) {
+                                Text("Off").tag("")
+                                ForEach(session.tracks) { track in
+                                    Text(track.label.isEmpty ? (track.language.isEmpty ? track.name : track.language) : track.label)
+                                        .tag(track.id)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: session.chosen == nil ? "captions.bubble" : "captions.bubble.fill")
+                        }
+                        .accessibilityLabel("Subtitles")
+                    }
+                    Button { app.files.toggleFavorite(entry) } label: {
+                        Image(systemName: app.files.favorites.contains(entry.path) ? "star.fill" : "star")
+                            .foregroundStyle(app.files.favorites.contains(entry.path) ? Brand.favorite : .white)
+                    }
+                    .accessibilityLabel(app.files.favorites.contains(entry.path) ? "Remove from favorites" : "Add to favorites")
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
 /// The player, the resume offer, the remembered position and the subtitles.
 @MainActor
-@Observable
-final class PlaybackSession {
+final class PlaybackSession: ObservableObject {
     let player: AVPlayer
-    private(set) var tracks: [SubtitleTrack] = []
-    private(set) var chosen: SubtitleTrack?
-    private(set) var cue: String?
+    @Published private(set) var tracks: [SubtitleTrack] = []
+    @Published private(set) var chosen: SubtitleTrack?
+    @Published private(set) var cue: String?
 
-    @ObservationIgnored private let app: AppEnvironment
-    @ObservationIgnored private let entry: FileEntry
-    @ObservationIgnored private var cues: [SubtitleCue] = []
-    @ObservationIgnored private var timeObserver: Any?
-    @ObservationIgnored private var statusObservation: NSKeyValueObservation?
-    @ObservationIgnored private var endObserver: NSObjectProtocol?
-    @ObservationIgnored private var offeredResume = false
-    @ObservationIgnored private var lastSaved = Date.distantPast
+    private let app: AppEnvironment
+    private let entry: FileEntry
+    private var cues: [SubtitleCue] = []
+    private var timeObserver: Any?
+    private var statusObservation: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
+    private var offeredResume = false
+    private var lastSaved = Date.distantPast
 
     init(app: AppEnvironment, entry: FileEntry) {
         self.app = app
@@ -141,7 +153,9 @@ final class PlaybackSession {
 
     private func tick(_ time: CMTime) {
         let seconds = time.seconds
-        cue = chosen == nil ? nil : WebVTT.cue(at: seconds, in: cues)?.text
+        let showing = chosen == nil ? nil : WebVTT.cue(at: seconds, in: cues)?.text
+        // Five ticks a second; the screen only hears about a new line.
+        if showing != cue { cue = showing }
         // Written while playing, not only on the way out: an app killed in the
         // background never gets to say goodbye.
         if player.timeControlStatus == .playing, Date().timeIntervalSince(lastSaved) > 5 {

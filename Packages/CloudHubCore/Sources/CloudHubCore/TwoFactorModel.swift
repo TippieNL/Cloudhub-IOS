@@ -1,5 +1,7 @@
 import Foundation
-import Observation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// What a change does. Turning it on and moving it are the same call on the server.
 public enum TwoFactorAction: Sendable, Equatable {
@@ -127,17 +129,16 @@ public enum TwoFactorText {
 
 /// The account's own SMS two-step verification, as Settings shows it.
 @MainActor
-@Observable
-public final class TwoFactorModel {
-    public private(set) var loading = true
-    public private(set) var overview: TwoFactorOverview?
-    public private(set) var step: TwoFactorStep = .summary
-    public private(set) var busy = false
-    public var message: TwoFactorMessage?
+public final class TwoFactorModel: ObservableObject {
+    @Published public private(set) var loading = true
+    @Published public private(set) var overview: TwoFactorOverview?
+    @Published public private(set) var step: TwoFactorStep = .summary
+    @Published public private(set) var busy = false
+    @Published public var message: TwoFactorMessage?
 
-    @ObservationIgnored private let calls: TwoFactorCalls
-    @ObservationIgnored public let clock: () -> Double
-    @ObservationIgnored public private(set) var pending: Task<Void, Never>?
+    private let calls: TwoFactorCalls
+    public let clock: () -> Double
+    public private(set) var pending: Task<Void, Never>?
 
     private static let noPendingChange = "TWO_FACTOR_NO_PENDING_CHANGE"
 

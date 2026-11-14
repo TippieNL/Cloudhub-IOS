@@ -1,26 +1,19 @@
 import CloudHubCore
-import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// The file browser. Grid by default because a phone showing photos wants
 /// pictures; the list is there for folders of documents.
 struct FilesView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var search = ""
-    @State private var showingNewFolder = false
-    @State private var newFolderName = ""
-    @State private var renaming: FileEntry?
-    @State private var renameText = ""
+    @State private var prompt: PromptRequest?
     @State private var relocating: Relocation?
     @State private var properties: FileEntry?
     @State private var pickingPhotos = false
-    @State private var photoItems: [PhotosPickerItem] = []
     @State private var pickingFiles = false
     @State private var capture: CameraPicker.Mode?
     @State private var subtitlesFor: FileEntry?
-    @State private var subtitleFile: URL?
-    @State private var subtitleLanguage = ""
     @State private var showingUploads = false
     @State private var skeletonAllowed = false
 
@@ -39,18 +32,18 @@ struct FilesView: View {
             .toolbar { toolbar }
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search")
             .onSubmit(of: .search) { model.searchEverywhere() }
-            .onChange(of: search) { _, q in model.setQuery(q) }
-            .onChange(of: model.query) { _, q in if q != search { search = q } }
+            .onChange(of: search) { q in model.setQuery(q) }
+            .onChange(of: model.query) { q in if q != search { search = q } }
             .refreshable { model.refresh() }
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-            .onChange(of: model.message) { _, message in
+            .onChange(of: model.message) { message in
                 if let message {
                     app.show(message)
                     model.message = nil
                 }
             }
-            .onChange(of: model.grid) { _, grid in app.prefs.gridView = grid }
+            .onChange(of: model.grid) { grid in app.prefs.gridView = grid }
             // Skeletons only for a load that takes a moment: a folder that
             // lists in 40 ms never shows one.
             .task(id: model.loading) {
@@ -59,18 +52,16 @@ struct FilesView: View {
                 try? await Task.sleep(nanoseconds: SkeletonTiming.delayMs * 1_000_000)
                 skeletonAllowed = true
             }
-            .modifier(FileDialogs(
-                showingNewFolder: $showingNewFolder, newFolderName: $newFolderName,
-                renaming: $renaming, renameText: $renameText,
-                relocating: $relocating, properties: $properties,
-                subtitlesFor: $subtitlesFor, subtitleFile: $subtitleFile, subtitleLanguage: $subtitleLanguage))
-            .photosPicker(isPresented: $pickingPhotos, selection: $photoItems, maxSelectionCount: 50,
-                          matching: .any(of: [.images, .videos]), preferredItemEncoding: .current)
-            .onChange(of: photoItems) { _, items in
-                guard !items.isEmpty else { return }
-                photoItems = []
-                Task { await stagePicked(items) }
+            .modifier(FileDialogs(prompt: $prompt, relocating: $relocating, properties: $properties,
+                                  subtitlesFor: $subtitlesFor))
+            .sheet(isPresented: $pickingPhotos) {
+                PhotoPicker { urls in
+                    pickingPhotos = false
+                    stagePicked(urls)
+                }
+                .ignoresSafeArea()
             }
+            .background(RouteLinks())
             .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     let picked: [(url: URL, name: String)] = urls.map { (url: $0, name: $0.lastPathComponent) }
@@ -88,7 +79,7 @@ struct FilesView: View {
                 }
                 .ignoresSafeArea()
             }
-            .sheet(isPresented: $showingUploads) { UploadsSheet().environment(app) }
+            .sheet(isPresented: $showingUploads) { UploadsSheet().environmentObject(app) }
     }
 
     /* ---- content ----------------------------------------------------------- */
@@ -106,7 +97,7 @@ struct FilesView: View {
                 MessageView(systemImage: "folder", title: "This folder is empty",
                             detail: "Add files with the + button, or create a folder to organise them.",
                             actionLabel: "Create a folder",
-                            action: { showingNewFolder = true })
+                            action: { askNewFolder() })
             } else {
                 MessageView(systemImage: "folder", title: "This folder is empty",
                             detail: "Nothing has been put here yet.")
@@ -202,12 +193,12 @@ struct FilesView: View {
                     .padding(.bottom, 6)
             }
         }
-        .animation(.snappy, value: model.selected.isEmpty)
-        .animation(.snappy, value: app.uploads.visible)
+        .animation(.easeInOut(duration: 0.25), value: model.selected.isEmpty)
+        .animation(.easeInOut(duration: 0.25), value: app.uploads.visible)
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItem(placement: .navigationBarLeading) {
             if model.path != "/" {
                 Button { model.goUp() } label: {
                     Label(Paths.parentOf(model.path) == "/" ? "Root" : Paths.nameOf(Paths.parentOf(model.path)),
@@ -217,7 +208,7 @@ struct FilesView: View {
                 .accessibilityLabel("Up one folder")
             }
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
             if model.canWrite {
                 Menu {
                     Button { pickingPhotos = true } label: { Label("Photos & videos", systemImage: "photo.on.rectangle") }
@@ -227,10 +218,7 @@ struct FilesView: View {
                     }
                     Button { pickingFiles = true } label: { Label("Any file", systemImage: "doc.badge.plus") }
                     Divider()
-                    Button {
-                        newFolderName = ""
-                        showingNewFolder = true
-                    } label: { Label("New folder", systemImage: "folder.badge.plus") }
+                    Button { askNewFolder() } label: { Label("New folder", systemImage: "folder.badge.plus") }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -238,7 +226,6 @@ struct FilesView: View {
             }
             Button { model.grid.toggle() } label: {
                 Image(systemName: model.grid ? "list.bullet" : "square.grid.2x2")
-                    .contentTransition(.symbolEffect(.replace))
             }
             .accessibilityLabel(model.grid ? "Switch to list view" : "Switch to grid view")
             Menu {
@@ -253,11 +240,11 @@ struct FilesView: View {
                 }
                 .pickerStyle(.menu)
                 Divider()
-                Button { app.path.append(.favorites) } label: { Label("Favorites", systemImage: "star") }
-                Button { app.path.append(.trash) } label: { Label("Trash", systemImage: "trash") }
-                Button { app.path.append(.storage) } label: { Label("Storage", systemImage: "chart.pie") }
-                Button { app.path.append(.duplicates) } label: { Label("Duplicates", systemImage: "square.on.square") }
-                Button { app.path.append(.settings) } label: { Label("Settings", systemImage: "gearshape") }
+                Button { app.route = .favorites } label: { Label("Favorites", systemImage: "star") }
+                Button { app.route = .trash } label: { Label("Trash", systemImage: "trash") }
+                Button { app.route = .storage } label: { Label("Storage", systemImage: "chart.pie") }
+                Button { app.route = .duplicates } label: { Label("Duplicates", systemImage: "square.on.square") }
+                Button { app.route = .settings } label: { Label("Settings", systemImage: "gearshape") }
                 Divider()
                 Button(role: .destructive) { app.signOut() } label: {
                     Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
@@ -297,8 +284,9 @@ struct FilesView: View {
                 Button { subtitlesFor = entry } label: { Label("Add subtitles…", systemImage: "captions.bubble") }
             }
             Button {
-                renameText = entry.name
-                renaming = entry
+                prompt = PromptRequest(title: "Rename", placeholder: "New name", initial: entry.name, confirm: "Rename") { name in
+                    model.rename(entry, to: name)
+                }
             } label: { Label("Rename", systemImage: "pencil") }
             Button { relocating = Relocation(paths: [entry.path], moving: true) } label: {
                 Label("Move to…", systemImage: "folder.badge.gearshape")
@@ -313,26 +301,24 @@ struct FilesView: View {
 
     /* ---- picked photos ----------------------------------------------------- */
 
-    private func stagePicked(_ items: [PhotosPickerItem]) async {
-        var files: [(URL, String)] = []
-        for item in items {
-            if let picked = try? await item.loadTransferable(type: PickedFile.self) {
-                files.append((picked.url, picked.url.lastPathComponent))
-            }
+    private func stagePicked(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        app.enqueue(urls.map { (url: $0, name: $0.lastPathComponent) })
+        // The picker's copies are copied again into the queue; these can go.
+        for url in urls { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    }
+
+    private func askNewFolder() {
+        prompt = PromptRequest(title: "New folder", placeholder: "Folder name", confirm: "Create") { name in
+            if !name.isEmpty { model.makeFolder(name) }
         }
-        if files.isEmpty {
-            app.show("Nothing could be read from that")
-            return
-        }
-        app.enqueue(files.map { (url: $0.0, name: $0.1) })
-        for (url, _) in files { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
     }
 }
 
 /// The grid or list of entries, with each one's context menu, coming back to
 /// the file a viewer was closed on.
 private struct EntryCollection: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     let entries: [FileEntry]
     let onOpen: (FileEntry) -> Void
     let menu: (FileEntry) -> AnyView
@@ -355,7 +341,7 @@ private struct EntryCollection: View {
                             }
                         }
                         .padding(16)
-                        .animation(.snappy, value: entries.map(\.path))
+                        .animation(.easeInOut(duration: 0.25), value: entries.map(\.path))
                     }
                 } else {
                     List(entries) { entry in
@@ -379,7 +365,7 @@ private struct EntryCollection: View {
                     .listStyle(.plain)
                 }
             }
-            .onChange(of: app.reveal) { _, path in
+            .onChange(of: app.reveal) { path in
                 guard let path, entries.contains(where: { $0.path == path }) else { return }
                 withAnimation { proxy.scrollTo(path, anchor: .center) }
                 app.reveal = nil
@@ -413,8 +399,9 @@ private struct Breadcrumbs: View {
                     ForEach(parts.indices, id: \.self) { i in
                         Image(systemName: "chevron.compact.right").foregroundStyle(.tertiary)
                         let target = "/" + parts[0...i].joined(separator: "/")
-                        Button(parts[i]) { onOpen(target) }
-                            .fontWeight(i == parts.count - 1 ? .semibold : .regular)
+                        Button { onOpen(target) } label: {
+                            Text(parts[i]).font(.footnote.weight(i == parts.count - 1 ? .semibold : .regular))
+                        }
                             .foregroundStyle(i == parts.count - 1 ? Color.primary : Brand.primary)
                             .id(i)
                     }
@@ -424,7 +411,7 @@ private struct Breadcrumbs: View {
                 .padding(.vertical, 8)
             }
             .onAppear { proxy.scrollTo(parts.count - 1, anchor: .trailing) }
-            .onChange(of: path) { proxy.scrollTo(parts.count - 1, anchor: .trailing) }
+            .onChange(of: path) { _ in proxy.scrollTo(parts.count - 1, anchor: .trailing) }
         }
     }
 }
@@ -452,26 +439,5 @@ private struct SelectionBar: View {
         .padding(.vertical, 12)
         .background(.bar)
         .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-}
-
-/// A file from the photo library, copied out while the picker still allows it.
-struct PickedFile: Transferable {
-    let url: URL
-
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .movie) { try PickedFile(copying: $0.file) }
-        FileRepresentation(importedContentType: .image) { try PickedFile(copying: $0.file) }
-        FileRepresentation(importedContentType: .item) { try PickedFile(copying: $0.file) }
-    }
-
-    /// The picker's file lives only as long as the closure; it is copied into
-    /// a folder of its own so its name survives.
-    init(copying source: URL) throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("picked-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let target = dir.appendingPathComponent(source.lastPathComponent)
-        try FileManager.default.copyItem(at: source, to: target)
-        url = target
     }
 }

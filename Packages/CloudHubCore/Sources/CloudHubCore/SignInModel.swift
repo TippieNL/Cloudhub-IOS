@@ -1,5 +1,7 @@
 import Foundation
-import Observation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// Why an attempt did not go through, and which field is at fault.
 public struct SignInError: Equatable, Sendable {
@@ -119,16 +121,15 @@ public struct APISignInCalls: SignInCalls {
 
 /// Sign-in, kept off the screen: the view renders `state` and calls in.
 @MainActor
-@Observable
-public final class SignInModel {
-    public private(set) var state: SignInState = .idle(nil)
+public final class SignInModel: ObservableObject {
+    @Published public private(set) var state: SignInState = .idle(nil)
 
-    @ObservationIgnored private let calls: SignInCalls
+    private let calls: SignInCalls
     /// Seconds, monotonic, for the resend countdown.
-    @ObservationIgnored public let clock: () -> Double
-    @ObservationIgnored private var recoveryCodesLeft: Int?
+    public let clock: () -> Double
+    private var recoveryCodesLeft: Int?
     /// The most recent background work, so a test can wait for it.
-    @ObservationIgnored public private(set) var pending: Task<Void, Never>?
+    public private(set) var pending: Task<Void, Never>?
 
     public init(calls: SignInCalls, clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
         self.calls = calls

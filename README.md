@@ -6,7 +6,12 @@ to the same REST API.
 
 ## Building
 
-Requirements: Xcode 16 or later, iOS 17 or later on the device.
+Requirements: Xcode 16 or later to build; **iOS 15 or later** on the device
+(iPhone 6s / SE (1st gen) and newer, iPad Air 2 / mini 4 and newer).
+
+Below iOS 15 is not supported: iPhones that stop at iOS 12 (5s, 6) would need
+the app rewritten in UIKit, because SwiftUI's lists, search, pull-to-refresh
+and async networking on which it is built start at iOS 15.
 
 ```sh
 brew install xcodegen

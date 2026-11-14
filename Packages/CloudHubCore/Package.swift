@@ -8,7 +8,7 @@ import PackageDescription
 
 let package = Package(
     name: "CloudHubCore",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v15), .macOS(.v12)],
     products: [
         .library(name: "CloudHubCore", targets: ["CloudHubCore"]),
     ],

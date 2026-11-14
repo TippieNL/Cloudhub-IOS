@@ -1,48 +1,49 @@
 import Foundation
-import Observation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// The file browser's state and everything it does, kept off the screen.
 @MainActor
-@Observable
-public final class FilesModel {
-    public private(set) var path = "/"
-    public private(set) var entries: [FileEntry] = []
-    public private(set) var load: LoadState = .loading
+public final class FilesModel: ObservableObject {
+    @Published public private(set) var path = "/"
+    @Published public private(set) var entries: [FileEntry] = []
+    @Published public private(set) var load: LoadState = .loading
     /// Why the listing failed, kept until it is retried -- not a toast.
-    public private(set) var loadError: String?
+    @Published public private(set) var loadError: String?
     /// Transient feedback for an action ("Renamed", "Moved to trash").
-    public var message: String?
-    public private(set) var selected: Set<String> = []
-    public private(set) var user: User?
-    public private(set) var query = ""
+    @Published public var message: String?
+    @Published public private(set) var selected: Set<String> = []
+    @Published public private(set) var user: User?
+    @Published public private(set) var query = ""
     /// Nil while browsing; set while showing results from the server.
-    public private(set) var searchResults: [FileEntry]?
-    public private(set) var searchTruncated = false
+    @Published public private(set) var searchResults: [FileEntry]?
+    @Published public private(set) var searchTruncated = false
     /// An All folders search is on.
-    public private(set) var searchMode = false
+    @Published public private(set) var searchMode = false
     /// A request for the search is out; results so far stay on screen.
-    public private(set) var searching = false
-    public private(set) var searchScanned = 0
-    public private(set) var searchError: String?
-    public var sort: FileSort = .name
-    public var grid = true
+    @Published public private(set) var searching = false
+    @Published public private(set) var searchScanned = 0
+    @Published public private(set) var searchError: String?
+    @Published public var sort: FileSort = .name
+    @Published public var grid = true
 
     /// The paths this account has starred, kept in step with every star and unstar.
-    public private(set) var favorites: Set<String> = []
-    public private(set) var favoriteEntries: [FileEntry] = []
-    public private(set) var favoritesLoad: LoadState = .loading
-    public private(set) var favoritesError: String?
+    @Published public private(set) var favorites: Set<String> = []
+    @Published public private(set) var favoriteEntries: [FileEntry] = []
+    @Published public private(set) var favoritesLoad: LoadState = .loading
+    @Published public private(set) var favoritesError: String?
 
     /// The server no longer knows this session; the app goes back to sign-in.
-    public private(set) var signedOut = false
+    @Published public private(set) var signedOut = false
 
-    @ObservationIgnored private let api: CloudHubAPI
-    @ObservationIgnored private var searchTask: Task<Void, Never>?
-    @ObservationIgnored private var listTask: Task<Void, Never>?
+    private let api: CloudHubAPI
+    private var searchTask: Task<Void, Never>?
+    private var listTask: Task<Void, Never>?
     /// One favorites request at a time, in the order they were made.
-    @ObservationIgnored private var favoriteChain: Task<Void, Never>?
-    @ObservationIgnored private var favoriteEdits = 0
-    @ObservationIgnored public private(set) var pending: Task<Void, Never>?
+    private var favoriteChain: Task<Void, Never>?
+    private var favoriteEdits = 0
+    public private(set) var pending: Task<Void, Never>?
 
     public init(api: CloudHubAPI) {
         self.api = api

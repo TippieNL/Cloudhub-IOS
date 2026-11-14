@@ -47,15 +47,20 @@ final class FakeServer: HTTPTransport, @unchecked Sendable {
         }
         let call = Call(method: method, route: query["route"] ?? "", query: query, body: body,
                         headers: request.allHTTPHeaderFields ?? [:], raw: request.httpBody)
-        let handler: Handler? = lock.withLock {
-            calls.append(call)
-            return handlers["\(method) \(call.route)"]
-        }
+        let handler = record(call)
         guard let handler else {
             return respond(url, 404, ["error": ["code": "NOT_FOUND", "message": "API endpoint not found"]])
         }
         let (status, json) = try handler(call)
         return respond(url, status, json)
+    }
+
+    /// Synchronous, so the lock is never held across an await.
+    private func record(_ call: Call) -> Handler? {
+        lock.lock()
+        defer { lock.unlock() }
+        calls.append(call)
+        return handlers["\(call.method) \(call.route)"]
     }
 
     private func respond(_ url: URL, _ status: Int, _ json: Any) -> (Data, HTTPURLResponse) {

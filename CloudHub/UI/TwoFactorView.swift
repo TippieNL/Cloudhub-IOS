@@ -6,12 +6,13 @@ import UIKit
 /// moving it, new recovery codes and turning it off -- each with the current
 /// password and a texted code, as in the web app's Security panel.
 struct TwoFactorView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var password = ""
     @State private var phone = ""
     @State private var code = ""
     @State private var codesSaved = false
     @State private var confirmLeave = false
+    @State private var sharingNote: String?
 
     private var model: TwoFactorModel { app.twoFactor }
 
@@ -43,6 +44,9 @@ struct TwoFactorView: View {
             Button("Leave", role: .destructive) { model.codesSaved() }
         } message: {
             Text("They are shown once. Without them, a lost phone means asking an administrator to let you in.")
+        }
+        .sheet(isPresented: Binding(get: { sharingNote != nil }, set: { if !$0 { sharingNote = nil } })) {
+            ActivitySheet(items: [sharingNote ?? ""]).mediumDetents()
         }
         .onAppear { model.open() }
         .onDisappear { model.cancel() }
@@ -122,13 +126,13 @@ struct TwoFactorView: View {
                 .keyboardType(step.recovery ? .asciiCapable : .numberPad)
                 .textInputAutocapitalization(.never)
                 .font(.title3.monospacedDigit())
-                .onChange(of: code) { _, typed in
+                .onChange(of: code) { typed in
                     let cleaned = CodeInput.clean(typed, recovery: step.recovery, length: step.stage.codeLength)
                     if cleaned != typed { code = cleaned }
                     if CodeInput.complete(cleaned, recovery: step.recovery, length: step.stage.codeLength) { model.confirm(cleaned) }
                 }
-                .onChange(of: step.rejected) { code = "" }
-                .onChange(of: step.stage.stage) { code = "" }
+                .onChange(of: step.rejected) { _ in code = "" }
+                .onChange(of: step.stage.stage) { _ in code = "" }
         } header: {
             Text(step.action.title)
         }
@@ -159,7 +163,7 @@ struct TwoFactorView: View {
         let note = TwoFactorText.codesNote(codes, username: app.files.user?.username, server: displayServer(app.api.baseURL))
         Section {
             ForEach(Array(codes.enumerated()), id: \.offset) { i, c in
-                LabeledContent("\(i + 1).") { Text(c).font(.body.monospaced()).textSelection(.enabled) }
+                LabeledRow { Text(c).font(.body.monospaced()).foregroundColor(.primary).textSelection(.enabled) } label: { Text("\(i + 1).") }
             }
         } header: {
             Text("Recovery codes")
@@ -174,8 +178,10 @@ struct TwoFactorView: View {
                 codesSaved = true
                 app.show("Codes copied")
             } label: { Label("Copy", systemImage: "doc.on.doc") }
-            SwiftUI.ShareLink(item: note) { Label("Share", systemImage: "square.and.arrow.up") }
-                .simultaneousGesture(TapGesture().onEnded { codesSaved = true })
+            Button {
+                codesSaved = true
+                sharingNote = note
+            } label: { Label("Share", systemImage: "square.and.arrow.up") }
             Button("I have saved them") {
                 codesSaved = true
                 model.codesSaved()

@@ -9,7 +9,7 @@ name: CloudHub
 options:
   bundleIdPrefix: nl.tippie
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "15.0"
   createIntermediateGroups: true
   developmentLanguage: en
 

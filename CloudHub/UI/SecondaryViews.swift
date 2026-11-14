@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Deleted items, restorable until the trash is emptied or they age out.
 struct TrashView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var listing: TrashListing?
     @State private var error: String?
     @State private var confirmingEmpty = false
@@ -99,7 +99,7 @@ struct TrashView: View {
 
 /// Starred files, most recently starred first, filtered by kind.
 struct FavoritesView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var chosen: KindFilter = .all
 
     var body: some View {
@@ -140,7 +140,7 @@ struct FavoritesView: View {
                                     // The folder is asked for first, so it is on its way by the time the list is back.
                                     model.open(entry.parent)
                                     app.reveal = entry.path
-                                    app.path.removeAll()
+                                    app.route = nil
                                 } label: { Label("Show in folder", systemImage: "folder") }
                                 Button { app.download(entry) } label: { Label("Download", systemImage: "arrow.down.circle") }
                                 Button { app.sharing = entry } label: { Label("Share link", systemImage: "link") }
@@ -151,7 +151,7 @@ struct FavoritesView: View {
                         }
                     }
                     .padding(16)
-                    .animation(.snappy, value: shown.map(\.path))
+                    .animation(.easeInOut(duration: 0.25), value: shown.map(\.path))
                 }
                 .refreshable { model.loadFavorites() }
             }
@@ -163,7 +163,7 @@ struct FavoritesView: View {
 
 /// How much is left, in words, above a bar -- against whichever ceiling applies.
 struct StorageView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var mine: MyStorage?
     @State private var server: ServerStorage?
     @State private var error: String?
@@ -250,7 +250,7 @@ struct StorageView: View {
     }
 
     private func line(_ label: String, _ value: String) -> some View {
-        LabeledContent(label, value: value)
+        LabeledRow(label, value: value)
     }
 
     private func load(refresh: Bool) async {

@@ -1,7 +1,7 @@
 import BackgroundTasks
 import CloudHubCore
+import Combine
 import Foundation
-import Observation
 import UIKit
 
 /// The upload queue as the screens see it, and the thing that keeps it moving.
@@ -16,25 +16,24 @@ import UIKit
 /// The queue is on disk and the server reports what it already holds, so
 /// nothing is sent twice however the work is interrupted.
 @MainActor
-@Observable
-final class UploadCenter {
+final class UploadCenter: ObservableObject {
     static let backgroundTaskId = "nl.tippie.cloudhub.uploads"
 
-    private(set) var queued: [QueuedUpload] = []
-    private(set) var failures: [UploadFailure] = []
-    private(set) var summary: UploadProgress.Summary = .idle
-    private(set) var currentId: String?
-    private(set) var currentSent: Int64 = 0
-    private(set) var justFinished = false
+    @Published private(set) var queued: [QueuedUpload] = []
+    @Published private(set) var failures: [UploadFailure] = []
+    @Published private(set) var summary: UploadProgress.Summary = .idle
+    @Published private(set) var currentId: String?
+    @Published private(set) var currentSent: Int64 = 0
+    @Published private(set) var justFinished = false
 
-    @ObservationIgnored let queue: UploadQueue
-    @ObservationIgnored private let engine: UploadEngine
-    @ObservationIgnored private var batchTotal: Int64 = 0
-    @ObservationIgnored private var runner: Task<Void, Never>?
-    @ObservationIgnored private var retryDelay: UInt64 = 15
-    @ObservationIgnored private var lingering: Task<Void, Never>?
+    let queue: UploadQueue
+    private let engine: UploadEngine
+    private var batchTotal: Int64 = 0
+    private var runner: Task<Void, Never>?
+    private var retryDelay: UInt64 = 15
+    private var lingering: Task<Void, Never>?
     /// Told when a folder gained a file, so the list on screen can refresh.
-    @ObservationIgnored var onFolderChanged: ((String) -> Void)?
+    var onFolderChanged: ((String) -> Void)?
 
     init(api: CloudHubAPI) {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

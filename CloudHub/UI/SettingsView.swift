@@ -5,7 +5,7 @@ import UIKit
 /// Account, server, appearance, playback, what is kept on this device, and
 /// signing out. Only what is destructive is red, and what cannot be undone asks.
 struct SettingsView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var changingPassword = false
     @State private var confirmForget = false
     @State private var confirmSignOut = false
@@ -13,21 +13,20 @@ struct SettingsView: View {
     @State private var positions = 0
 
     var body: some View {
-        @Bindable var app = app
         Form {
             Section("Account") {
-                LabeledContent(app.files.user?.username ?? "Not signed in", value: (app.files.user?.role ?? "").capitalized)
+                LabeledRow(app.files.user?.username ?? "Not signed in", value: (app.files.user?.role ?? "").capitalized)
                 Button { changingPassword = true } label: {
                     row("Change password", "Your current password is required", "key")
                 }
-                NavigationLink(value: Route.twoFactor) {
+                NavigationLink(destination: TwoFactorView()) {
                     row("Two-step verification", "A code by text message when you sign in", "lock.shield")
                 }
             }
             Section("Server") {
-                LabeledContent("Address", value: displayServer(app.api.baseURL))
-                NavigationLink(value: Route.storage) { row("Storage and space left", nil, "chart.pie") }
-                NavigationLink(value: Route.duplicates) { row("Find duplicates", "Files stored more than once", "square.on.square") }
+                LabeledRow("Address", value: displayServer(app.api.baseURL))
+                NavigationLink(destination: StorageView()) { row("Storage and space left", nil, "chart.pie") }
+                NavigationLink(destination: DuplicatesView()) { row("Find duplicates", "Files stored more than once", "square.on.square") }
                 Button { app.phase = .setup } label: { row("Use a different server", nil, "server.rack") }
             }
             Section("Appearance") {
@@ -40,7 +39,7 @@ struct SettingsView: View {
                 }
             }
             Section("Playback and history") {
-                LabeledContent {
+                LabeledRow {
                     Text(positions == 0 ? "None" : "\(positions) video\(Format.plural(positions))")
                 } label: {
                     row("Videos with a saved position", "Reopening one offers to carry on where you stopped", "play.circle")
@@ -63,21 +62,21 @@ struct SettingsView: View {
                     thumbnails = 0
                     app.show("Image cache cleared")
                 } label: {
-                    LabeledContent {
+                    LabeledRow {
                         Text(thumbnails == 0 ? "Empty" : Format.bytes(thumbnails))
                     } label: {
-                        row("Cached thumbnails and photos", thumbnails == 0 ? "Nothing cached" : "Tap to clear", "photo.stack")
+                        row("Cached thumbnails and photos", thumbnails == 0 ? "Nothing cached" : "Tap to clear", "photo.on.rectangle.angled")
                     }
                 }
                 .disabled(thumbnails == 0)
-                LabeledContent {
+                LabeledRow {
                     Text(app.uploads.queued.isEmpty ? "None" : "\(app.uploads.queued.count) file\(Format.plural(app.uploads.queued.count))")
                 } label: {
                     row("Uploads waiting", "Resumed whenever the app or iOS gets the chance", "arrow.up.circle")
                 }
             }
             Section("About") {
-                LabeledContent("CloudHub", value: app.appVersion)
+                LabeledRow("CloudHub", value: app.appVersion)
                 Button(role: .destructive) { confirmSignOut = true } label: {
                     Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
                 }
@@ -88,7 +87,7 @@ struct SettingsView: View {
             positions = app.prefs.rememberedPositionCount
             thumbnails = app.images.diskBytes
         }
-        .onChange(of: app.files.grid) { _, grid in app.prefs.gridView = grid }
+        .onChange(of: app.files.grid) { grid in app.prefs.gridView = grid }
         .confirmationDialog("Forget saved positions?", isPresented: $confirmForget, titleVisibility: .visible) {
             Button("Forget", role: .destructive) {
                 app.prefs.forgetAllResumePositions()
@@ -103,7 +102,7 @@ struct SettingsView: View {
         } message: {
             Text("Uploads still waiting will stay queued until you sign in again.")
         }
-        .sheet(isPresented: $changingPassword) { ChangePasswordSheet().environment(app) }
+        .sheet(isPresented: $changingPassword) { ChangePasswordSheet().environmentObject(app) }
     }
 
     private func row(_ title: String, _ detail: String?, _ symbol: String) -> some View {
@@ -119,7 +118,7 @@ struct SettingsView: View {
 }
 
 private struct ChangePasswordSheet: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     @State private var current = ""
     @State private var replacement = ""
@@ -131,7 +130,7 @@ private struct ChangePasswordSheet: View {
     static let minimum = 12
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section {
                     SecureField("Current password", text: $current).textContentType(.password)
@@ -150,9 +149,9 @@ private struct ChangePasswordSheet: View {
                     if busy { ProgressView() } else { Button("Change", action: submit) }
                 }
             }
-            .onChange(of: current) { error = nil }
-            .onChange(of: replacement) { error = nil }
-            .onChange(of: confirm) { error = nil }
+            .onChange(of: current) { _ in error = nil }
+            .onChange(of: replacement) { _ in error = nil }
+            .onChange(of: confirm) { _ in error = nil }
         }
     }
 

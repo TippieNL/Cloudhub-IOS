@@ -7,76 +7,56 @@ import UniformTypeIdentifiers
 
 /// New folder, rename, move/copy, properties and add-subtitles, for the browser.
 struct FileDialogs: ViewModifier {
-    @Environment(AppEnvironment.self) private var app
-    @Binding var showingNewFolder: Bool
-    @Binding var newFolderName: String
-    @Binding var renaming: FileEntry?
-    @Binding var renameText: String
+    @EnvironmentObject private var app: AppEnvironment
+    @Binding var prompt: PromptRequest?
     @Binding var relocating: FilesView.Relocation?
     @Binding var properties: FileEntry?
     @Binding var subtitlesFor: FileEntry?
-    @Binding var subtitleFile: URL?
-    @Binding var subtitleLanguage: String
 
     func body(content: Content) -> some View {
         content
-            .alert("New folder", isPresented: $showingNewFolder) {
-                TextField("Folder name", text: $newFolderName)
-                Button("Cancel", role: .cancel) {}
-                Button("Create") {
-                    let name = newFolderName.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty { app.files.makeFolder(name) }
-                }
-            }
-            .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { entry in
-                TextField("New name", text: $renameText)
-                Button("Cancel", role: .cancel) {}
-                Button("Rename") { app.files.rename(entry, to: renameText.trimmingCharacters(in: .whitespaces)) }
+            .sheet(item: $prompt) { request in
+                TextPromptSheet(title: request.title, placeholder: request.placeholder, initial: request.initial,
+                                message: request.message, confirm: request.confirm, onConfirm: request.onConfirm)
             }
             .sheet(item: $relocating) { request in
                 FolderPicker(startAt: app.files.path, confirm: request.moving ? "Move here" : "Copy here") { destination in
                     if request.moving { app.files.move(request.paths, to: destination) }
                     else { app.files.copy(request.paths, to: destination) }
                 }
-                .environment(app)
+                .environmentObject(app)
             }
             .sheet(item: $properties) { entry in
                 PropertiesSheet(entry: entry, photo: nil)
             }
             // A subtitle is found by sitting beside the film under the right
             // name, so adding one is an upload with the name decided here.
-            .fileImporter(isPresented: Binding(get: { subtitlesFor != nil && subtitleFile == nil },
-                                               set: { if !$0 && subtitleFile == nil { subtitlesFor = nil } }),
+            .fileImporter(isPresented: Binding(get: { subtitlesFor != nil }, set: { if !$0 { subtitlesFor = nil } }),
                           allowedContentTypes: [.item]) { result in
-                guard case .success(let url) = result else { return }
-                if !SubtitleRules.isSubtitleFile(url.lastPathComponent) {
-                    subtitlesFor = nil
+                guard let video = subtitlesFor, case .success(let file) = result else { return }
+                subtitlesFor = nil
+                if !SubtitleRules.isSubtitleFile(file.lastPathComponent) {
                     app.show("Subtitles have to be a .srt or .vtt file")
                     return
                 }
-                subtitleLanguage = SubtitleRules.guessLanguage(url.lastPathComponent)
-                subtitleFile = url
-            }
-            .alert("Add subtitles", isPresented: Binding(get: { subtitleFile != nil }, set: { if !$0 { subtitleFile = nil; subtitlesFor = nil } })) {
-                TextField("en, nl, de… (blank for none)", text: $subtitleLanguage)
-                    .textInputAutocapitalization(.never)
-                Button("Cancel", role: .cancel) {}
-                Button("Add") {
-                    if let video = subtitlesFor, let file = subtitleFile {
-                        let name = SubtitleRules.fileName(forVideo: video.name, language: subtitleLanguage,
-                                                          extension: Paths.extensionOf(file.lastPathComponent))
-                        app.attachSubtitle(file, to: video, named: name)
-                    }
+                let request = PromptRequest(
+                    title: "Add subtitles", placeholder: "en, nl, de… (blank for none)",
+                    initial: SubtitleRules.guessLanguage(file.lastPathComponent),
+                    message: "The language code the player shows for this track.", confirm: "Add"
+                ) { language in
+                    let name = SubtitleRules.fileName(forVideo: video.name, language: language,
+                                                      extension: Paths.extensionOf(file.lastPathComponent))
+                    app.attachSubtitle(file, to: video, named: name)
                 }
-            } message: {
-                Text("The language code the player shows for this track.")
+                // After the document picker has finished leaving.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { prompt = request }
             }
     }
 }
 
 /// Choose a destination by browsing, not by typing a path. Folders only.
 struct FolderPicker: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     @State var path: String
     let confirm: String
@@ -92,7 +72,7 @@ struct FolderPicker: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Group {
                 if loading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -142,7 +122,7 @@ struct PropertiesSheet: View {
     let photo: PhotoDetails?
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 if let photo {
                     row("Taken", photo.taken)
@@ -160,7 +140,7 @@ struct PropertiesSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-        .presentationDetents([.medium, .large])
+        .mediumDetents()
     }
 
     @ViewBuilder private func row(_ label: String, _ value: String?) -> some View {
@@ -207,18 +187,19 @@ struct PhotoDetails {
 /// A share link is a public URL: anyone holding it can open the file without
 /// an account, so the link, its lifetime and the way to revoke it are shown.
 struct ShareLinkSheet: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     let entry: FileEntry
     @State private var hours: Int? = 24
     @State private var link: CloudHubCore.ShareLink?
     @State private var busy = false
     @State private var error: String?
+    @State private var shareURL: URL?
 
     private let lifetimes: [(String, Int?)] = [("1 hour", 1), ("1 day", 24), ("1 week", 168), ("30 days", 720), ("Never", nil)]
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section {
                     Text("Anyone with this link can view \(entry.name) without signing in.")
@@ -230,7 +211,7 @@ struct ShareLinkSheet: View {
                         ForEach(lifetimes, id: \.0) { Text($0.0).tag($0.1) }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: hours) { create() }
+                    .onChange(of: hours) { _ in create() }
                 }
                 Section {
                     if busy {
@@ -247,7 +228,7 @@ struct ShareLinkSheet: View {
                             dismiss()
                         } label: { Label("Copy link", systemImage: "doc.on.doc") }
                         if let url = URL(string: link.url) {
-                            SwiftUI.ShareLink(item: url) { Label("Share link…", systemImage: "square.and.arrow.up") }
+                            Button { shareURL = url } label: { Label("Share link…", systemImage: "square.and.arrow.up") }
                         }
                         Button(role: .destructive) {
                             Task {
@@ -263,7 +244,10 @@ struct ShareLinkSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-        .presentationDetents([.medium, .large])
+        .mediumDetents()
+        .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
+            ActivitySheet(items: [shareURL as Any])
+        }
         .task { create() }
     }
 

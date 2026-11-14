@@ -10,7 +10,7 @@ import UIKit
 /// a sideways drag to the pager, and a zoomed one keeps it until its edge
 /// reaches the screen's.
 struct PhotoViewer: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -19,8 +19,7 @@ struct PhotoViewer: View {
     @State private var chrome = true
     @State private var details: FileEntry?
     @State private var detailFacts: PhotoDetails?
-    @State private var renaming: FileEntry?
-    @State private var renameText = ""
+    @State private var prompt: PromptRequest?
     @State private var deleting: FileEntry?
     @State private var shareItem: ShareItem?
     /// The public link is a different thing from sending the photo.
@@ -54,7 +53,7 @@ struct PhotoViewer: View {
             }
         }
         .statusBarHidden(!chrome)
-        .persistentSystemOverlays(chrome ? .automatic : .hidden)
+        .systemOverlaysHidden(!chrome)
         .toastOverlay()
         // Photos and a queued upload share one connection: while this is up
         // the uploader sends small slices and waits between them.
@@ -68,15 +67,14 @@ struct PhotoViewer: View {
             PropertiesSheet(entry: entry, photo: detailFacts)
         }
         .sheet(item: $linkFor) { entry in
-            ShareLinkSheet(entry: entry).environment(app)
+            ShareLinkSheet(entry: entry).environmentObject(app)
         }
         .sheet(item: $shareItem) { item in
-            ActivitySheet(items: [item.url]).presentationDetents([.medium, .large])
+            ActivitySheet(items: [item.url]).mediumDetents()
         }
-        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { entry in
-            TextField("New name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") { rename(entry, to: renameText.trimmingCharacters(in: .whitespaces)) }
+        .sheet(item: $prompt) { request in
+            TextPromptSheet(title: request.title, placeholder: request.placeholder, initial: request.initial,
+                            confirm: request.confirm, onConfirm: request.onConfirm)
         }
         .confirmationDialog("Delete this photo?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible, presenting: deleting) { entry in
@@ -126,8 +124,9 @@ struct PhotoViewer: View {
                 if app.files.canWrite {
                     Divider()
                     Button {
-                        renameText = entry.name
-                        renaming = entry
+                        prompt = PromptRequest(title: "Rename", placeholder: "New name", initial: entry.name, confirm: "Rename") { name in
+                            rename(entry, to: name)
+                        }
                     } label: { Label("Rename…", systemImage: "pencil") }
                     Button(role: .destructive) { deleting = entry } label: { Label("Delete", systemImage: "trash") }
                 }
@@ -258,7 +257,7 @@ struct ActivitySheet: UIViewControllerRepresentable {
 /* ---- the pager ------------------------------------------------------------- */
 
 private struct PhotoPager: UIViewControllerRepresentable {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     let photos: [FileEntry]
     @Binding var index: Int
     let onTap: () -> Void

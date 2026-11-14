@@ -5,7 +5,7 @@ import SwiftUI
 /// frame for, a frame decoded here for videos it has none for, and a tinted
 /// glyph for everything else. Holds its place while loading and fades in.
 struct Thumbnail: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.displayScale) private var scale
     let entry: FileEntry
     var side: CGFloat = 120
@@ -216,7 +216,6 @@ struct SkeletonGrid: View {
             .foregroundStyle(Brand.surfaceVariant)
             .opacity(pulse ? 0.55 : 1)
         }
-        .scrollDisabled(true)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }

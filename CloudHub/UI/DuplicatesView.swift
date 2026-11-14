@@ -8,7 +8,7 @@ import SwiftUI
 /// deleted without being asked for, every set keeps a copy, and deleting goes
 /// to the trash.
 struct DuplicatesView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var scan: DuplicateScan?
     @State private var error: String?
     @State private var busy = true
@@ -96,7 +96,7 @@ struct DuplicatesView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { selected.formUnion(DuplicateRules.removable(in: groups, keeping: keeping)) } label: {
-                    Image(systemName: "checklist.checked")
+                    Image(systemName: "checklist")
                 }
                 .accessibilityLabel("Select every extra copy")
                 .disabled(!canWrite || groups.isEmpty)

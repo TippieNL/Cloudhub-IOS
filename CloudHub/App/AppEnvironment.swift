@@ -1,6 +1,6 @@
 import CloudHubCore
+import Combine
 import Foundation
-import Observation
 import SwiftUI
 import UIKit
 
@@ -14,8 +14,8 @@ enum Phase: Equatable {
     case files
 }
 
-/// Screens pushed over the file browser. Back pops one at a time, so opening
-/// Storage from Settings and going back returns to Settings.
+/// Screens pushed over the file browser. Settings pushes Storage, Duplicates
+/// and Two-step verification itself, so Back from them returns to Settings.
 enum Route: Hashable {
     case favorites, trash, storage, duplicates, settings, twoFactor
 }
@@ -40,33 +40,37 @@ struct Toast: Identifiable, Equatable {
 /// Everything long-lived, wired once. No dependency-injection framework: this
 /// app has one client, one API and one settings store.
 @MainActor
-@Observable
-final class AppEnvironment {
-    @ObservationIgnored let prefs: Preferences
-    @ObservationIgnored let vault: CookieVault
-    @ObservationIgnored let client: HTTPClient
-    @ObservationIgnored let api: CloudHubAPI
-    @ObservationIgnored let images: ImageLoader
-    @ObservationIgnored let mediaTrust: MediaTrust
+final class AppEnvironment: ObservableObject {
+    let prefs: Preferences
+    let vault: CookieVault
+    let client: HTTPClient
+    let api: CloudHubAPI
+    let images: ImageLoader
+    let mediaTrust: MediaTrust
     let uploads: UploadCenter
     let files: FilesModel
     let signIn: SignInModel
     let twoFactor: TwoFactorModel
 
-    var phase: Phase
-    var path: [Route] = []
-    var theme: ThemeChoice {
+    @Published var phase: Phase
+    /// The screen pushed over the file browser, if any.
+    @Published var route: Route?
+    @Published var theme: ThemeChoice {
         didSet { prefs.theme = theme }
     }
-    var toast: Toast?
-    var viewer: ViewerRequest?
-    var player: FileEntry?
-    var sharing: FileEntry?
-    var quickLook: URL?
+    @Published var toast: Toast?
+    @Published var viewer: ViewerRequest?
+    @Published var player: FileEntry?
+    @Published var sharing: FileEntry?
+    @Published var quickLook: URL?
     /// The file a viewer was closed on, so the list comes back to it.
-    var reveal: String?
+    @Published var reveal: String?
     /// A message for the sign-in screen: "Your session ended".
-    var signInNotice: String?
+    @Published var signInNotice: String?
+
+    /// Each model's changes, passed on as this object's: every screen observes
+    /// the environment, and sees the files, uploads and sign-in move with it.
+    private var forwarding: Set<AnyCancellable> = []
 
     init() {
         let prefs = Preferences()
@@ -87,6 +91,12 @@ final class AppEnvironment {
         self.phase = (prefs.serverURL ?? "").isEmpty ? .setup : .restoring
         files.grid = prefs.gridView
         uploads.onFolderChanged = { [weak self] folder in self?.files.folderChanged(folder) }
+        let changes: [ObservableObjectPublisher] = [
+            files.objectWillChange, uploads.objectWillChange, signIn.objectWillChange, twoFactor.objectWillChange,
+        ]
+        for publisher in changes {
+            publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &forwarding)
+        }
     }
 
     /* ---- session ---------------------------------------------------------- */
@@ -116,7 +126,7 @@ final class AppEnvironment {
         api.baseURL = url
         vault.clear()
         signIn.reset()
-        path = []
+        route = nil
         phase = .signIn
     }
 
@@ -127,7 +137,7 @@ final class AppEnvironment {
     }
 
     private func enterFiles() {
-        path = []
+        route = nil
         signInNotice = nil
         phase = .files
         files.start()
@@ -146,7 +156,7 @@ final class AppEnvironment {
     func endSession(notice: String?) {
         vault.clear()
         signIn.reset()
-        path = []
+        route = nil
         viewer = nil
         player = nil
         signInNotice = notice

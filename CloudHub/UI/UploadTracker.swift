@@ -4,7 +4,7 @@ import SwiftUI
 /// The bar at the bottom of the file list while anything is in flight, just
 /// finished, or refused and not yet acknowledged.
 struct UploadTrackerBar: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     let onTap: () -> Void
 
     private var center: UploadCenter { app.uploads }
@@ -20,7 +20,6 @@ struct UploadTrackerBar: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(headline)
                             .font(.subheadline.weight(.semibold))
-                            .contentTransition(.numericText())
                             .lineLimit(1)
                         if let detail {
                             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -71,13 +70,13 @@ struct UploadTrackerBar: View {
 
 /// Every file in the batch: the one moving, the ones waiting, and the refusals.
 struct UploadsSheet: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.dismiss) private var dismiss
 
     private var center: UploadCenter { app.uploads }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 if center.summary.active {
                     Section {
@@ -137,6 +136,6 @@ struct UploadsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-        .presentationDetents([.medium, .large])
+        .mediumDetents()
     }
 }

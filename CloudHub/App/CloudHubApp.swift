@@ -11,12 +11,10 @@ struct CloudHubApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(delegate.app)
-                .preferredColorScheme(delegate.app.theme.colorScheme)
-                .tint(Brand.primary)
+                .environmentObject(delegate.app)
                 .onOpenURL { delegate.app.receive($0) }
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             switch phase {
             case .active: delegate.app.uploads.kick()
             case .background: delegate.app.uploads.scheduleBackground()
@@ -52,10 +50,9 @@ extension ThemeChoice {
 
 /// The phase decides the screen; everything signed-in lives under one stack.
 struct RootView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
 
     var body: some View {
-        @Bindable var app = app
         ZStack {
             switch app.phase {
             case .setup:
@@ -68,30 +65,21 @@ struct RootView: View {
                 SignInView()
                     .transition(.opacity)
             case .files:
-                NavigationStack(path: $app.path) {
+                NavigationView {
                     FilesView()
-                        .navigationDestination(for: Route.self) { route in
-                            switch route {
-                            case .favorites: FavoritesView()
-                            case .trash: TrashView()
-                            case .storage: StorageView()
-                            case .duplicates: DuplicatesView()
-                            case .settings: SettingsView()
-                            case .twoFactor: TwoFactorView()
-                            }
-                        }
                 }
+                .navigationViewStyle(.stack)
                 .fullScreenCover(item: $app.viewer) { request in
                     PhotoViewer(images: request.images, startAt: request.index)
-                        .environment(app)
+                        .environmentObject(app)
                 }
                 .fullScreenCover(item: $app.player) { entry in
                     PlayerView(entry: entry)
-                        .environment(app)
+                        .environmentObject(app)
                 }
                 .sheet(item: $app.sharing) { entry in
                     ShareLinkSheet(entry: entry)
-                        .environment(app)
+                        .environmentObject(app)
                 }
                 .sheet(item: Binding(get: { app.quickLook.map(PreviewItem.init) }, set: { app.quickLook = $0?.url })) { item in
                     QuickLookView(url: item.url).ignoresSafeArea()
@@ -100,10 +88,36 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: app.phase)
         .toastOverlay()
+        .preferredColorScheme(app.theme.colorScheme)
+        .tint(Brand.primary)
         // The session ended under the app: back to sign-in, saying so.
-        .onChange(of: app.files.signedOut) { _, ended in
+        .onChange(of: app.files.signedOut) { ended in
             if ended && app.phase == .files { app.endSession(notice: "Your session ended. Sign in again.") }
         }
+    }
+}
+
+/// The pushed screens, as links the file browser keeps out of sight. One
+/// tagged link per route: NavigationStack's value-based navigation is iOS 16.
+struct RouteLinks: View {
+    @EnvironmentObject private var app: AppEnvironment
+
+    var body: some View {
+        VStack {
+            link(.favorites) { FavoritesView() }
+            link(.trash) { TrashView() }
+            link(.storage) { StorageView() }
+            link(.duplicates) { DuplicatesView() }
+            link(.settings) { SettingsView() }
+            link(.twoFactor) { TwoFactorView() }
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
+        .accessibilityHidden(true)
+    }
+
+    private func link<Destination: View>(_ route: Route, @ViewBuilder _ destination: @escaping () -> Destination) -> some View {
+        NavigationLink(tag: route, selection: $app.route, destination: destination) { EmptyView() }
     }
 }
 

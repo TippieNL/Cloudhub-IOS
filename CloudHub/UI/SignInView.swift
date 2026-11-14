@@ -4,14 +4,14 @@ import SwiftUI
 /// First run: where is the server? Checked before it is accepted, because a
 /// typo otherwise shows up much later as a blank screen.
 struct SetupView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @State private var input = ""
     @State private var busy = false
     @State private var error: String?
     @State private var certificate: UntrustedCertificate?
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section {
                     TextField("files.example.com", text: $input)
@@ -102,7 +102,7 @@ struct SetupView: View {
 /// Sign in: a gradient, a translucent card, the mark, and the form rising
 /// into place. Reduce Motion stops all of it; the states still change.
 struct SignInView: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var username = ""
     @State private var password = ""
@@ -155,7 +155,7 @@ struct SignInView: View {
                 .padding(.bottom, 32)
                 .frame(maxWidth: .infinity)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnScroll()
         }
         .onAppear {
             username = app.prefs.rememberedUsername ?? ""
@@ -163,7 +163,7 @@ struct SignInView: View {
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.5)) { appeared = true }
             if case .idle = model.state, model.codeStep == nil { focus = username.isEmpty ? .username : .password }
         }
-        .onChange(of: model.state) { _, state in
+        .onChange(of: model.state) { state in
             switch state {
             case .failed:
                 if !reduceMotion { withAnimation(.default) { shake += 1 } }
@@ -181,8 +181,8 @@ struct SignInView: View {
                 break
             }
         }
-        .onChange(of: model.codeStep?.rejected ?? 0) { old, new in
-            if new > old {
+        .onChange(of: model.codeStep?.rejected ?? 0) { rejected in
+            if rejected > 0 {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
                 if !reduceMotion { withAnimation(.default) { shake += 1 } }
             }
@@ -198,7 +198,7 @@ struct SignInView: View {
     @ViewBuilder private var passwordCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let notice = app.signInNotice {
-                Label(notice, systemImage: "clock.badge.exclamationmark")
+                Label(notice, systemImage: "clock")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -236,8 +236,8 @@ struct SignInView: View {
                 .fieldStyle(error: error?.field == .password)
                 if error?.field == .password, let e = error { FieldError(text: e.message) }
             }
-            .onChange(of: username) { model.editing() }
-            .onChange(of: password) { model.editing() }
+            .onChange(of: username) { _ in model.editing() }
+            .onChange(of: password) { _ in model.editing() }
 
             Toggle("Remember my username", isOn: $remember).font(.subheadline)
 
@@ -256,7 +256,7 @@ struct SignInView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(model.state == .submitting || model.state == .success)
-            .animation(.snappy, value: model.state)
+            .animation(.easeInOut(duration: 0.25), value: model.state)
         }
     }
 
@@ -268,7 +268,7 @@ struct SignInView: View {
 
 /// The code step: texted to the phone as it opens; the sixth digit checks it.
 private struct CodeStepCard: View {
-    @Environment(AppEnvironment.self) private var app
+    @EnvironmentObject private var app: AppEnvironment
     let step: CodeStep
     var focus: FocusState<SignInView.Field?>.Binding
     @State private var code = ""
@@ -278,7 +278,7 @@ private struct CodeStepCard: View {
             Text("Two-step verification").font(.title3.bold())
             Text(step.prompt).font(.subheadline).foregroundStyle(.secondary)
             if let notice = step.notice {
-                Label(notice, systemImage: step.sending ? "paperplane" : "checkmark.message")
+                Label(notice, systemImage: step.sending ? "paperplane" : "checkmark.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -290,7 +290,7 @@ private struct CodeStepCard: View {
                 .font(step.recovery ? .body.monospaced() : .title2.monospacedDigit())
                 .focused(focus, equals: .code)
                 .fieldStyle(error: step.error != nil)
-                .onChange(of: code) { _, typed in
+                .onChange(of: code) { typed in
                     let cleaned = CodeInput.clean(typed, recovery: step.recovery, length: step.codeLength)
                     if cleaned != typed { code = cleaned }
                     if CodeInput.complete(cleaned, recovery: step.recovery, length: step.codeLength) { app.signIn.verify(cleaned) }
@@ -328,7 +328,7 @@ private struct CodeStepCard: View {
                 .foregroundStyle(.secondary)
         }
         .onAppear { focus.wrappedValue = .code }
-        .onChange(of: step.rejected) { code = "" }
+        .onChange(of: step.rejected) { _ in code = "" }
     }
 }
 
