@@ -176,9 +176,12 @@ final class FilesModelTests: XCTestCase {
     func testStartListsTheRootAndFavorites() async {
         let model = FilesModel(api: CloudHubAPI(baseURL: "https://h", transport: server()))
         model.start()
-        await model.pending?.value
-        await model.pending?.value
-        await model.pending?.value
+        // start() hands off to a listing and a favorites load of its own, so
+        // wait for what they produce rather than for a count of tasks.
+        for _ in 0..<200 where model.load != .ready || model.favoritesLoad != .ready {
+            await model.pending?.value
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
         XCTAssertEqual(model.visible.map(\.name), ["Docs", "a.jpg", "b.jpg"])
         XCTAssertTrue(model.canWrite)
         XCTAssertEqual(model.favorites, ["/a.jpg"])
